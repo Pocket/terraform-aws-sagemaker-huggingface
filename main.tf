@@ -119,12 +119,44 @@ locals {
 # ------------------------------------------------------------------------------
 # SageMaker Model
 # ------------------------------------------------------------------------------
+data "aws_ssm_parameter" "vpc" {
+  name = "/Shared/Vpc"
+}
+
+data "aws_vpc" "vpc" {
+  id = data.aws_ssm_parameter.vpc.value
+}
+
+resource "aws_security_group" "sagemaker" {
+  name        = "${local.prefix}-sagemaker"
+  description = "Security group for Sagemaker access"
+  vpc_id      = data.aws_vpc.vpc.id
+
+  ingress {
+    from_port = 443
+    to_port   = 443
+    protocol  = "tcp"
+
+    cidr_blocks = [
+      data.aws_vpc.vpc.cidr_block
+    ]
+  }
+
+  tags = var.tags
+}
 
 resource "aws_sagemaker_model" "model_with_model_artifact" {
   count              = var.model_data != null && var.hf_model_id == null ? 1 : 0
   name               = "${var.name_prefix}-model-${random_string.resource_id.result}${local.model_slug}"
   execution_role_arn = local.role_arn
   tags               = var.tags
+ 
+  vpc_config {
+    subnet_ids = split(",", data.aws_ssm_parameter.private_subnets.value)
+    security_group_ids = [
+      aws_security_group.sagemaker_security_group.id
+    ]
+  }
 
   primary_container {
     # CPU Image
