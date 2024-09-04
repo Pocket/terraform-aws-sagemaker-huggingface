@@ -41,6 +41,11 @@ variable "instance_count" {
   default     = 1
 }
 
+variable "model_data" {
+  description = "The The S3 path where the model artifacts are stored. This path must point to a single gzip compressed tar archive (.tar.gz suffix)."
+  type        = string
+  default     = null
+}
 
 variable "hf_model_id" {
   description = "The HF_MODEL_ID environment variable defines the model id, which will be automatically loaded from [hf.co/models](https://huggingface.co/models) when creating or SageMaker Endpoint."
@@ -51,6 +56,7 @@ variable "hf_model_id" {
 variable "hf_task" {
   description = "The HF_TASK environment variable defines the task for the used 🤗 Transformers pipeline. A full list of tasks can be find [here](https://huggingface.co/transformers/main_classes/pipelines.html)."
   type        = string
+  default     = null
 }
 
 variable "hf_api_token" {
@@ -65,13 +71,6 @@ variable "hf_model_revision" {
   default     = null
 }
 
-
-variable "model_data" {
-  description = "The S3 location of a SageMaker model data .tar.gz file (default: None). Not needed when using `hf_model_id`."
-  type        = string
-  default     = null
-
-}
 
 variable "sagemaker_execution_role" {
   description = "An AWS IAM role Name to access training data and model artifacts. After the endpoint is created, the inference code might use the IAM role if it needs to access some AWS resources. If not specified, the role will created with with the `CreateModel` permissions from the [documentation](https://docs.aws.amazon.com/sagemaker/latest/dg/sagemaker-roles.html#sagemaker-roles-createmodel-perms)"

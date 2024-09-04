@@ -18,19 +18,18 @@ output "sagemaker_model" {
 
 output "sagemaker_endpoint_configuration" {
   description = "created Amazon SageMaker endpoint configuration resource"
-  value       = aws_sagemaker_endpoint_configuration.huggingface
+  value       = aws_sagemaker_endpoint_configuration.model
 }
 
 output "sagemaker_endpoint" {
   description = "created Amazon SageMaker endpoint resource"
-  value       = aws_sagemaker_endpoint.huggingface
+  value       = aws_sagemaker_endpoint.model
 }
 
 output "sagemaker_endpoint_name" {
   description = "Name of the created Amazon SageMaker endpoint, used for invoking the endpoint, with sdks"
-  value       = aws_sagemaker_endpoint.huggingface.name
+  value       = aws_sagemaker_endpoint.model.name
 }
-
 
 output "tags" {
   value = var.tags
