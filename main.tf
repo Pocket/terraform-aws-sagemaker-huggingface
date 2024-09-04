@@ -7,7 +7,7 @@
 locals {
   framework_version = var.pytorch_version != null ? var.pytorch_version : var.tensorflow_version
   repository_name   = var.pytorch_version != null ? "huggingface-pytorch-inference" : "huggingface-tensorflow-inference"
-  device            = length(regexall("^ml\\.[g|p{1,3}\\.$]", var.instance_type)) > 0 ? "gpu" : "cpu"
+  device            = var.instance_type != null ? (length(regexall("^ml\\.[g|p{1,3}\\.$]", var.instance_type)) > 0 ? "gpu" : "cpu") : "cpu"
   image_key         = "${local.framework_version}-${local.device}"
   pytorch_image_tag = {
     "1.7.1-gpu"  = "1.7.1-transformers${var.transformers_version}-gpu-py36-cu110-ubuntu18.04"
@@ -119,12 +119,48 @@ locals {
 # ------------------------------------------------------------------------------
 # SageMaker Model
 # ------------------------------------------------------------------------------
+data "aws_ssm_parameter" "vpc" {
+  name = "/Shared/Vpc"
+}
+
+data "aws_vpc" "vpc" {
+  id = data.aws_ssm_parameter.vpc.value
+}
+
+data "aws_ssm_parameter" "private_subnets" {
+  name = "/Shared/PrivateSubnets"
+}
+
+resource "aws_security_group" "sagemaker_security_group" {
+  name        = "${var.name_prefix}-sagemaker"
+  description = "Security group for Sagemaker access"
+  vpc_id      = data.aws_vpc.vpc.id
+
+  ingress {
+    from_port = 443
+    to_port   = 443
+    protocol  = "tcp"
+
+    cidr_blocks = [
+      data.aws_vpc.vpc.cidr_block
+    ]
+  }
+
+  tags = var.tags
+}
 
 resource "aws_sagemaker_model" "model_with_model_artifact" {
   count              = var.model_data != null && var.hf_model_id == null ? 1 : 0
   name               = "${var.name_prefix}-model-${random_string.resource_id.result}${local.model_slug}"
   execution_role_arn = local.role_arn
   tags               = var.tags
+ 
+  vpc_config {
+    subnets = split(",", data.aws_ssm_parameter.private_subnets.value)
+    security_group_ids = [
+      aws_security_group.sagemaker_security_group.id
+    ]
+  }
 
   primary_container {
     # CPU Image
@@ -139,7 +175,6 @@ resource "aws_sagemaker_model" "model_with_model_artifact" {
     create_before_destroy = true
   }
 }
-
 
 resource "aws_sagemaker_model" "model_with_hub_model" {
   count              = var.model_data == null && var.hf_model_id != null ? 1 : 0
@@ -170,7 +205,7 @@ locals {
 # SageMaker Endpoint configuration
 # ------------------------------------------------------------------------------
 
-resource "aws_sagemaker_endpoint_configuration" "huggingface" {
+resource "aws_sagemaker_endpoint_configuration" "model" {
   count = local.sagemaker_endpoint_type.real_time ? 1 : 0
   name  = "${var.name_prefix}-ep-config-${random_string.resource_id.result}"
   tags  = var.tags
@@ -185,7 +220,7 @@ resource "aws_sagemaker_endpoint_configuration" "huggingface" {
 }
 
 
-resource "aws_sagemaker_endpoint_configuration" "huggingface_async" {
+resource "aws_sagemaker_endpoint_configuration" "model_async" {
   count = local.sagemaker_endpoint_type.asynchronous ? 1 : 0
   name  = "${var.name_prefix}-ep-config-${random_string.resource_id.result}"
   tags  = var.tags
@@ -211,7 +246,7 @@ resource "aws_sagemaker_endpoint_configuration" "huggingface_async" {
 }
 
 
-resource "aws_sagemaker_endpoint_configuration" "huggingface_serverless" {
+resource "aws_sagemaker_endpoint_configuration" "model_serverless" {
   count = local.sagemaker_endpoint_type.serverless ? 1 : 0
   name  = "${var.name_prefix}-ep-config-${random_string.resource_id.result}"
   tags  = var.tags
@@ -232,11 +267,11 @@ resource "aws_sagemaker_endpoint_configuration" "huggingface_serverless" {
 locals {
   sagemaker_endpoint_config = (
     local.sagemaker_endpoint_type.real_time ?
-    aws_sagemaker_endpoint_configuration.huggingface[0] : (
+    aws_sagemaker_endpoint_configuration.model[0] : (
       local.sagemaker_endpoint_type.asynchronous ?
-      aws_sagemaker_endpoint_configuration.huggingface_async[0] : (
+      aws_sagemaker_endpoint_configuration.model_async[0] : (
         local.sagemaker_endpoint_type.serverless ?
-        aws_sagemaker_endpoint_configuration.huggingface_serverless[0] : null
+        aws_sagemaker_endpoint_configuration.model_serverless[0] : null
       )
     )
   )
@@ -247,7 +282,7 @@ locals {
 # ------------------------------------------------------------------------------
 
 
-resource "aws_sagemaker_endpoint" "huggingface" {
+resource "aws_sagemaker_endpoint" "model" {
   name = "${var.name_prefix}-ep-${random_string.resource_id.result}"
   tags = var.tags
 
@@ -267,7 +302,7 @@ resource "aws_appautoscaling_target" "sagemaker_target" {
   count              = local.use_autoscaling
   min_capacity       = var.autoscaling.min_capacity
   max_capacity       = var.autoscaling.max_capacity
-  resource_id        = "endpoint/${aws_sagemaker_endpoint.huggingface.name}/variant/AllTraffic"
+  resource_id        = "endpoint/${aws_sagemaker_endpoint.model.name}/variant/AllTraffic"
   scalable_dimension = "sagemaker:variant:DesiredInstanceCount"
   service_namespace  = "sagemaker"
 }
